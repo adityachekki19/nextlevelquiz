@@ -1,12 +1,40 @@
-import streamlit as st
+# ======================================
+# LOAD DATA
+# ======================================
 
-st.set_page_config(page_title="MCQ Analytics")
+try:
 
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
+    # CSV
+    if uploaded_file.name.endswith(".csv"):
 
-if st.session_state["logged_in"]:
-    st.success("✅ Logged In")
-    st.write("Go to sidebar pages")
-else:
-    st.warning("Please Login First")
+        df = pd.read_csv(uploaded_file)
+
+    # XLSX
+    elif uploaded_file.name.endswith(".xlsx"):
+
+        df = pd.read_excel(
+            uploaded_file,
+            engine="openpyxl"
+        )
+
+    # XLS
+    elif uploaded_file.name.endswith(".xls"):
+
+        df = pd.read_excel(
+            uploaded_file,
+            engine="xlrd"
+        )
+
+    else:
+
+        st.error("Unsupported file format")
+        st.stop()
+
+    df.columns = df.columns.str.strip().str.upper()
+
+    st.success("✅ Dataset Loaded Successfully")
+
+except Exception as e:
+
+    st.error(f"❌ Error Loading File: {e}")
+    st.stop()
