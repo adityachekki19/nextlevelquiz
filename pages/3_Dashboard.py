@@ -120,29 +120,37 @@ st.subheader("❓ Question Analysis")
 question_accuracy = {}
 
 for q in answer_key:
+
     if q in df.columns:
         correct = (df[q] == answer_key[q]).sum()
         question_accuracy[q] = correct / len(df)
     else:
         question_accuracy[q] = 0
 
-question_df = pd.DataFrame.from_dict(
-    question_accuracy,
-    orient="index",
-    columns=["Accuracy"]
+question_df = pd.DataFrame({
+    "Question": list(question_accuracy.keys()),
+    "Accuracy": list(question_accuracy.values())
+})
+
+# ✅ FORCE NUMERIC + CLEAN
+question_df["Accuracy"] = pd.to_numeric(question_df["Accuracy"], errors="coerce").fillna(0)
+
+# ======================================
+# SAFE PLOTTING (NO pandas.plot)
+# ======================================
+
+fig, ax = plt.subplots()
+
+ax.bar(
+    question_df["Question"],
+    question_df["Accuracy"],
+    color="skyblue"
 )
 
-# 🔥 FIX: Convert to numeric (IMPORTANT)
-question_df["Accuracy"] = pd.to_numeric(
-    question_df["Accuracy"],
-    errors="coerce"
-).fillna(0)
+ax.set_ylabel("Accuracy")
+ax.set_title("Question Accuracy")
 
-# Plot
-fig5 = plt.figure()
-question_df["Accuracy"].plot(kind="bar")
-plt.ylabel("Accuracy")
-st.pyplot(fig5)
+st.pyplot(fig)
 
 # ======================================
 # INSIGHTS
