@@ -4,21 +4,76 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # ======================================
-# AUTH CHECK
+# PAGE CONFIG
 # ======================================
 
-if not st.session_state.get("logged_in"):
-    st.error("Please login first")
+st.set_page_config(
+    page_title="AI Learning Analytics",
+    layout="wide"
+)
+
+st.title("📊 AI Learning Analytics Dashboard")
+
+# ======================================
+# LOGIN SYSTEM
+# ======================================
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+
+    st.subheader("🔐 Login")
+
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+
+        if username == "admin" and password == "1234":
+            st.session_state.logged_in = True
+            st.success("✅ Login Successful")
+            st.rerun()
+
+        else:
+            st.error("❌ Invalid Credentials")
+
     st.stop()
 
-if "df" not in st.session_state:
-    st.error("Upload data first")
+# ======================================
+# FILE UPLOAD
+# ======================================
+
+st.sidebar.title("📂 Upload Dataset")
+
+uploaded_file = st.sidebar.file_uploader(
+    "Upload CSV or Excel File",
+    type=["csv", "xlsx"]
+)
+
+if uploaded_file is None:
+    st.warning("Please upload dataset")
     st.stop()
 
-df = st.session_state["df"]
-answer_key = st.session_state["answer_key"]
+# ======================================
+# LOAD DATA (SAFE)
+# ======================================
 
-st.title("📊 MCQ Analytics Dashboard")
+try:
+
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+
+    else:
+        df = pd.read_excel(uploaded_file)
+
+    df.columns = df.columns.str.strip().str.upper()
+
+    st.success("✅ Dataset Loaded Successfully")
+
+except Exception as e:
+    st.error(f"❌ Error Loading File: {e}")
+    st.stop()
 
 # ======================================
 # CLEAN DATA
@@ -26,14 +81,61 @@ st.title("📊 MCQ Analytics Dashboard")
 
 df.fillna(0, inplace=True)
 
-# Ensure numeric safety
-for col in ["CORRECT", "TIME_TAKEN", "CGPA"]:
+# Convert numeric-safe columns
+for col in ["CORRECT", "TIME_TAKEN"]:
     if col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
 # ======================================
-# SCORE CALCULATION
+# SIDEBAR FILTERS
 # ======================================
+
+st.sidebar.title("🎯 Filters")
+
+if "DEPARTMENT" in df.columns:
+
+    dept = st.sidebar.selectbox(
+        "Department",
+        ["All"] + sorted(df["DEPARTMENT"].astype(str).unique())
+    )
+
+    if dept != "All":
+        df = df[df["DEPARTMENT"] == dept]
+
+if "DIFFICULTY" in df.columns:
+
+    difficulty = st.sidebar.selectbox(
+        "Difficulty",
+        ["All"] + sorted(df["DIFFICULTY"].astype(str).unique())
+    )
+
+    if difficulty != "All":
+        df = df[df["DIFFICULTY"] == difficulty]
+
+if "COLLEGE_TIER" in df.columns:
+
+    tier = st.sidebar.selectbox(
+        "College Tier",
+        ["All"] + sorted(df["COLLEGE_TIER"].astype(str).unique())
+    )
+
+    if tier != "All":
+        df = df[df["COLLEGE_TIER"] == tier]
+
+# ======================================
+# SCORE CALCULATION (SAFE)
+# ======================================
+
+answer_key = st.session_state.get("answer_key", {})
+
+if not answer_key:
+    answer_key = {
+        "Q1": "A",
+        "Q2": "C",
+        "Q3": "C",
+        "Q4": "B",
+        "Q5": "D"
+    }
 
 def calculate_score(row):
     score = 0
@@ -49,10 +151,10 @@ df["RESULT"] = df["SCORE"].apply(
 )
 
 # ======================================
-# METRICS
+# KPI METRICS
 # ======================================
 
-st.subheader("📌 Overall Statistics")
+st.subheader("📌 Overall Metrics")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -60,6 +162,22 @@ col1.metric("Students", len(df))
 col2.metric("Average Score", round(df["SCORE"].mean(), 2))
 col3.metric("Highest Score", df["SCORE"].max())
 col4.metric("Lowest Score", df["SCORE"].min())
+
+# ======================================
+# SAFE CGPA FIX (MAIN ERROR FIX)
+# ======================================
+
+if "CGPA" in df.columns:
+
+    df["CGPA"] = pd.to_numeric(df["CGPA"], errors="coerce")
+
+    avg_cgpa = round(df["CGPA"].mean(), 2)
+
+else:
+
+    avg_cgpa = 0
+
+col4.metric("Avg CGPA", avg_cgpa)
 
 st.markdown("---")
 
@@ -87,9 +205,10 @@ st.pyplot(fig2)
 # DEPARTMENT ANALYSIS
 # ======================================
 
-st.subheader("🏢 Department Performance")
-
 if "DEPARTMENT" in df.columns:
+
+    st.subheader("🏢 Department Performance")
+
     dept_perf = df.groupby("DEPARTMENT")["SCORE"].mean()
 
     fig3 = plt.figure()
@@ -102,6 +221,7 @@ if "DEPARTMENT" in df.columns:
 # ======================================
 
 if "COLLEGE" in df.columns:
+
     st.subheader("🏫 College Performance")
 
     college_perf = df.groupby("COLLEGE")["SCORE"].mean()
@@ -112,7 +232,7 @@ if "COLLEGE" in df.columns:
     st.pyplot(fig4)
 
 # ======================================
-# QUESTION ANALYSIS (FIXED)
+# QUESTION ANALYSIS (SAFE)
 # ======================================
 
 st.subheader("❓ Question Analysis")
@@ -120,6 +240,7 @@ st.subheader("❓ Question Analysis")
 question_accuracy = {}
 
 for q in answer_key:
+
     if q in df.columns:
         correct = (df[q] == answer_key[q]).sum()
         question_accuracy[q] = correct / len(df)
@@ -132,15 +253,13 @@ question_df = pd.DataFrame.from_dict(
     columns=["Accuracy"]
 )
 
-# 🔥 FIX: Convert to numeric (IMPORTANT)
 question_df["Accuracy"] = pd.to_numeric(
     question_df["Accuracy"],
     errors="coerce"
 ).fillna(0)
 
-# Plot
 fig5 = plt.figure()
-question_df["Accuracy"].plot(kind="bar")
+plt.bar(question_df.index, question_df["Accuracy"])
 plt.ylabel("Accuracy")
 st.pyplot(fig5)
 
