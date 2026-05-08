@@ -158,12 +158,26 @@ st.pyplot(fig)
 
 st.subheader("🧠 Insights")
 
-best_q = question_df["Accuracy"].idxmax()
-worst_q = question_df["Accuracy"].idxmin()
+st.subheader("🧠 Insights")
 
-st.write(f"✔ Easiest Question: **{best_q}**")
-st.write(f"⚠ Most Difficult Question: **{worst_q}**")
+# Ensure clean numeric values
+question_df["Accuracy"] = pd.to_numeric(
+    question_df["Accuracy"],
+    errors="coerce"
+).fillna(0)
 
+# SAFE CHECK (avoid idxmax crash)
+if len(question_df) > 0 and question_df["Accuracy"].sum() > 0:
+
+    best_q = question_df.loc[question_df["Accuracy"].idxmax(), "Question"]
+    worst_q = question_df.loc[question_df["Accuracy"].idxmin(), "Question"]
+
+    st.write(f"✔ Easiest Question: **{best_q}**")
+    st.write(f"⚠ Most Difficult Question: **{worst_q}**")
+
+else:
+
+    st.warning("Not enough data to compute insights.")
 # ======================================
 # TOP STUDENTS
 # ======================================
