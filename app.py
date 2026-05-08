@@ -31,7 +31,6 @@ if not st.session_state.logged_in:
     if st.button("Login"):
 
         if username == "admin" and password == "1234":
-
             st.session_state.logged_in = True
             st.success("✅ Login Successful")
             st.rerun()
@@ -57,7 +56,7 @@ if uploaded_file is None:
     st.stop()
 
 # ======================================
-# LOAD DATA
+# LOAD DATA (SAFE)
 # ======================================
 
 try:
@@ -73,7 +72,7 @@ try:
     st.success("✅ Dataset Loaded Successfully")
 
 except Exception as e:
-    st.error(f"Error Loading File: {e}")
+    st.error(f"❌ Error Loading File: {e}")
     st.stop()
 
 # ======================================
@@ -82,13 +81,17 @@ except Exception as e:
 
 df.fillna(0, inplace=True)
 
+# Convert numeric-safe columns
+for col in ["CORRECT", "TIME_TAKEN"]:
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
 # ======================================
 # SIDEBAR FILTERS
 # ======================================
 
 st.sidebar.title("🎯 Filters")
 
-# Department Filter
 if "DEPARTMENT" in df.columns:
 
     dept = st.sidebar.selectbox(
@@ -99,7 +102,6 @@ if "DEPARTMENT" in df.columns:
     if dept != "All":
         df = df[df["DEPARTMENT"] == dept]
 
-# Difficulty Filter
 if "DIFFICULTY" in df.columns:
 
     difficulty = st.sidebar.selectbox(
@@ -110,7 +112,6 @@ if "DIFFICULTY" in df.columns:
     if difficulty != "All":
         df = df[df["DIFFICULTY"] == difficulty]
 
-# College Tier Filter
 if "COLLEGE_TIER" in df.columns:
 
     tier = st.sidebar.selectbox(
@@ -122,6 +123,34 @@ if "COLLEGE_TIER" in df.columns:
         df = df[df["COLLEGE_TIER"] == tier]
 
 # ======================================
+# SCORE CALCULATION (SAFE)
+# ======================================
+
+answer_key = st.session_state.get("answer_key", {})
+
+if not answer_key:
+    answer_key = {
+        "Q1": "A",
+        "Q2": "C",
+        "Q3": "C",
+        "Q4": "B",
+        "Q5": "D"
+    }
+
+def calculate_score(row):
+    score = 0
+    for q in answer_key:
+        if q in row and row[q] == answer_key[q]:
+            score += 1
+    return score
+
+df["SCORE"] = df.apply(calculate_score, axis=1)
+
+df["RESULT"] = df["SCORE"].apply(
+    lambda x: "Pass" if x >= len(answer_key) / 2 else "Fail"
+)
+
+# ======================================
 # KPI METRICS
 # ======================================
 
@@ -129,169 +158,122 @@ st.subheader("📌 Overall Metrics")
 
 col1, col2, col3, col4 = st.columns(4)
 
-total_students = df["STUDENT_ID"].nunique()
+col1.metric("Students", len(df))
+col2.metric("Average Score", round(df["SCORE"].mean(), 2))
+col3.metric("Highest Score", df["SCORE"].max())
+col4.metric("Lowest Score", df["SCORE"].min())
 
-accuracy = round(
-    (df["CORRECT"].sum() / len(df)) * 100,
-    2
-)
+# ======================================
+# SAFE CGPA FIX (MAIN ERROR FIX)
+# ======================================
 
-avg_time = round(df["TIME_TAKEN"].mean(), 2)
+if "CGPA" in df.columns:
 
-avg_cgpa = round(df["CGPA"].mean(), 2)
+    df["CGPA"] = pd.to_numeric(df["CGPA"], errors="coerce")
 
-col1.metric("Students", total_students)
-col2.metric("Accuracy %", accuracy)
-col3.metric("Avg Time", avg_time)
+    avg_cgpa = round(df["CGPA"].mean(), 2)
+
+else:
+
+    avg_cgpa = 0
+
 col4.metric("Avg CGPA", avg_cgpa)
 
 st.markdown("---")
 
 # ======================================
-# DIFFICULTY ANALYSIS
+# SCORE DISTRIBUTION
 # ======================================
 
-st.subheader("📈 Difficulty Analysis")
-
-difficulty_perf = df.groupby(
-    "DIFFICULTY"
-)["CORRECT"].mean() * 100
+st.subheader("📈 Score Distribution")
 
 fig1 = plt.figure()
-
-difficulty_perf.plot(
-    kind="bar",
-    color="orange"
-)
-
-plt.ylabel("Accuracy %")
-
+sns.histplot(df["SCORE"], bins=5, kde=True)
 st.pyplot(fig1)
+
+# ======================================
+# PASS / FAIL
+# ======================================
+
+st.subheader("✅ Pass vs Fail")
+
+fig2 = plt.figure()
+sns.countplot(x="RESULT", data=df)
+st.pyplot(fig2)
 
 # ======================================
 # DEPARTMENT ANALYSIS
 # ======================================
 
-st.subheader("🏢 Department Performance")
+if "DEPARTMENT" in df.columns:
 
-dept_perf = df.groupby(
-    "DEPARTMENT"
-)["CORRECT"].mean() * 100
+    st.subheader("🏢 Department Performance")
 
-fig2 = plt.figure()
+    dept_perf = df.groupby("DEPARTMENT")["SCORE"].mean()
 
-dept_perf.sort_values().plot(
-    kind="barh",
-    color="green"
+    fig3 = plt.figure()
+    dept_perf.plot(kind="bar")
+    plt.ylabel("Average Score")
+    st.pyplot(fig3)
+
+# ======================================
+# COLLEGE ANALYSIS
+# ======================================
+
+if "COLLEGE" in df.columns:
+
+    st.subheader("🏫 College Performance")
+
+    college_perf = df.groupby("COLLEGE")["SCORE"].mean()
+
+    fig4 = plt.figure()
+    college_perf.plot(kind="bar")
+    plt.ylabel("Average Score")
+    st.pyplot(fig4)
+
+# ======================================
+# QUESTION ANALYSIS (SAFE)
+# ======================================
+
+st.subheader("❓ Question Analysis")
+
+question_accuracy = {}
+
+for q in answer_key:
+
+    if q in df.columns:
+        correct = (df[q] == answer_key[q]).sum()
+        question_accuracy[q] = correct / len(df)
+    else:
+        question_accuracy[q] = 0
+
+question_df = pd.DataFrame.from_dict(
+    question_accuracy,
+    orient="index",
+    columns=["Accuracy"]
 )
 
-plt.xlabel("Accuracy %")
-
-st.pyplot(fig2)
-
-# ======================================
-# TOPIC ANALYSIS
-# ======================================
-
-st.subheader("📚 Topic Analysis")
-
-topic_perf = df.groupby(
-    "TOPIC"
-)["CORRECT"].mean() * 100
-
-fig3 = plt.figure()
-
-topic_perf.sort_values().plot(
-    kind="barh",
-    color="purple"
-)
-
-plt.xlabel("Accuracy %")
-
-st.pyplot(fig3)
-
-# ======================================
-# TIME TAKEN DISTRIBUTION
-# ======================================
-
-st.subheader("⏱ Time Taken Distribution")
-
-fig4 = plt.figure()
-
-sns.histplot(
-    df["TIME_TAKEN"],
-    bins=30,
-    kde=True
-)
-
-st.pyplot(fig4)
-
-# ======================================
-# CONCEPT UNDERSTANDING
-# ======================================
-
-st.subheader("🧠 Concept Understanding")
-
-concept_rate = round(
-    df["CONCEPT_UNDERSTOOD"].mean() * 100,
-    2
-)
-
-hint_rate = round(
-    df["HINT_USED"].mean() * 100,
-    2
-)
-
-col5, col6 = st.columns(2)
-
-col5.metric(
-    "Concept Understood %",
-    concept_rate
-)
-
-col6.metric(
-    "Hint Usage %",
-    hint_rate
-)
-
-# ======================================
-# TEST CASE ANALYSIS
-# ======================================
-
-st.subheader("💻 Coding Performance")
+question_df["Accuracy"] = pd.to_numeric(
+    question_df["Accuracy"],
+    errors="coerce"
+).fillna(0)
 
 fig5 = plt.figure()
-
-sns.boxplot(
-    x="DIFFICULTY",
-    y="TEST_CASES_PASSED",
-    data=df
-)
-
+plt.bar(question_df.index, question_df["Accuracy"])
+plt.ylabel("Accuracy")
 st.pyplot(fig5)
 
 # ======================================
-# HEATMAP
+# INSIGHTS
 # ======================================
 
-st.subheader("🔥 Heatmap")
+st.subheader("🧠 Insights")
 
-pivot = df.pivot_table(
-    values="CORRECT",
-    index="DEPARTMENT",
-    columns="DIFFICULTY",
-    aggfunc="mean"
-)
+best_q = question_df["Accuracy"].idxmax()
+worst_q = question_df["Accuracy"].idxmin()
 
-fig6 = plt.figure(figsize=(10, 5))
-
-sns.heatmap(
-    pivot,
-    annot=True,
-    cmap="coolwarm"
-)
-
-st.pyplot(fig6)
+st.write(f"✔ Easiest Question: **{best_q}**")
+st.write(f"⚠ Most Difficult Question: **{worst_q}**")
 
 # ======================================
 # TOP STUDENTS
@@ -299,23 +281,12 @@ st.pyplot(fig6)
 
 st.subheader("🏆 Top Students")
 
-student_perf = df.groupby(
-    "STUDENT_ID"
-).agg({
-    "CORRECT": "sum",
-    "TIME_TAKEN": "mean",
-    "CGPA": "mean"
-}).reset_index()
-
-top_students = student_perf.sort_values(
-    "CORRECT",
-    ascending=False
-).head(10)
+top_students = df.sort_values("SCORE", ascending=False).head(10)
 
 st.dataframe(top_students)
 
 # ======================================
-# FULL DATASET
+# FULL DATA
 # ======================================
 
 st.subheader("📋 Full Dataset")
@@ -329,8 +300,8 @@ st.dataframe(df)
 csv = df.to_csv(index=False)
 
 st.download_button(
-    "⬇ Download Processed Report",
+    "⬇ Download Report",
     csv,
-    "learning_analytics.csv",
+    "quiz_results.csv",
     "text/csv"
 )
